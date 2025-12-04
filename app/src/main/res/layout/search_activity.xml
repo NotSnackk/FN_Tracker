@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:gravity="center">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#2196F3"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="24dp"> <!-- niebieskie tło -->
+
+
+        <ImageView
+            android:id="@+id/titleImage"
+            android:layout_width="195dp"
+            android:layout_height="131dp"
+            android:layout_marginBottom="20dp"
+            android:contentDescription="Logo"
+            android:src="@drawable/fn" />
+
+        <SearchView
+            android:id="@+id/searchview"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:layout_marginTop="10dp"
+            android:layout_marginBottom="10dp"
+            android:background="@drawable/search_background"
+            android:iconifiedByDefault="false"
+            android:queryHint="Wpisz nick z Fortnite" />
+
+    </LinearLayout>
+
+
+
+</LinearLayout>
