@@ -1,51 +1,121 @@
-package com.example.fortnite_tracker.viewmodel
+package com.example.fortnite_tracker
 
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.fortnite_tracker.api.ApiClient
-import com.example.fortnite_tracker.models.PlayerStatsResponse
 import kotlinx.coroutines.launch
+
+enum class GameMode {
+    SOLO,
+    DUO,
+    SQUAD
+}
+
+data class StatsUiState(
+    val nickname: String = "",
+    val selectedMode: GameMode = GameMode.SOLO,
+    val kills: String = "-",
+    val wins: String = "-",
+    val matches: String = "-",
+    val isLoading: Boolean = false,
+    val errorMessage: String = ""
+)
 
 class StatsViewModel : ViewModel() {
 
-    private val API_KEY = "48778d4c-79e943f8-4e31f1cc-9bd21d12" // Użyj swojego klucza API
+    private val apiKey = BuildConfig.FORTNITE_API_KEY
 
-    private val _playerStatsLiveData = MutableLiveData<PlayerStatsResponse?>()
-    val playerStatsLiveData: LiveData<PlayerStatsResponse?> = _playerStatsLiveData
+    private val _uiState = MutableLiveData(StatsUiState())
+    val uiState: LiveData<StatsUiState> = _uiState
 
-    private val _errorLiveData = MutableLiveData<String>()
-    val errorLiveData: LiveData<String> = _errorLiveData
+    private var cachedStats: PlayerStatsResponse? = null
 
-    // Funkcja pobierająca statystyki [cite: 58]
-    fun loadStats (nickname: String) {
+    fun loadStats(nickname: String) {
+        val trimmedNickname = nickname.trim()
+        if (trimmedNickname.isEmpty()) {
+            _uiState.value = _uiState.value?.copy(errorMessage = "Podaj nick gracza.")
+            return
+        }
+
+        _uiState.value = _uiState.value?.copy(
+            nickname = trimmedNickname,
+            isLoading = true,
+            errorMessage = ""
+        )
+
+        if (apiKey.isBlank()) {
+            setError("Brak klucza API. Dodaj FORTNITE_API_KEY do local.properties.")
+            return
+        }
+
         viewModelScope.launch {
             try {
-                // 1. Pobranie Account ID
-                val accountResponse = ApiClient.retrofitService.getAccountId(nickname, API_KEY)
+                val accountResponse = ApiClient.retrofitService.getAccountId(trimmedNickname, apiKey)
 
-                if (accountResponse.isSuccessful) {
-                    val accountId = accountResponse.body()?.account_id
-
-                    if (accountId != null) {
-                        // 2. Pobranie statystyk gracza
-                        val statsResponse  = ApiClient.retrofitService.getPlayerStats(accountId, API_KEY)
-                        if (statsResponse.isSuccessful) {
-                            val stats = statsResponse.body()
-                            _playerStatsLiveData.postValue(stats)
-                        } else {
-                            _errorLiveData.postValue("Nie udało się pobrać statystyk gracza.")
-                        }
-                    } else {
-                        _errorLiveData.postValue("Nie znaleziono gracza o podanym nicku.")
-                    }
-                } else {
-                    _errorLiveData.postValue("Błąd komunikacji z API.")
+                if (!accountResponse.isSuccessful) {
+                    setError("Błąd komunikacji z API (lookup).")
+                    return@launch
                 }
-            } catch (e: Exception) {
-                _errorLiveData.postValue("Błąd komunikacji z API: ${e.message}")
+
+                val accountId = accountResponse.body()?.account_id
+                if (accountId.isNullOrBlank()) {
+                    setError("Nie znaleziono gracza o podanym nicku.")
+                    return@launch
+                }
+
+                val statsResponse = ApiClient.retrofitService.getPlayerStats(accountId, apiKey)
+                if (!statsResponse.isSuccessful) {
+                    setError("Nie udało się pobrać statystyk gracza.")
+                    return@launch
+                }
+
+                cachedStats = statsResponse.body()
+                applyMode(_uiState.value?.selectedMode ?: GameMode.SOLO)
+            } catch (exception: Exception) {
+                setError("Błąd połączenia: ${exception.message}")
             }
         }
+    }
+
+    fun onModeSelected(mode: GameMode) {
+        applyMode(mode)
+    }
+
+    private fun applyMode(mode: GameMode) {
+        val stats = cachedStats
+        if (stats == null) {
+            _uiState.value = _uiState.value?.copy(
+                selectedMode = mode,
+                isLoading = false
+            )
+            return
+        }
+
+        val modeStats = when (mode) {
+            GameMode.SOLO -> stats.globalStats?.solo
+            GameMode.DUO -> stats.globalStats?.duo
+            GameMode.SQUAD -> stats.globalStats?.squad
+        }
+
+        _uiState.value = StatsUiState(
+            nickname = stats.name,
+            selectedMode = mode,
+            kills = modeStats?.kills?.toString() ?: "-",
+            wins = modeStats?.wins?.toString() ?: "-",
+            matches = modeStats?.matchesPlayed?.toString() ?: "-",
+            isLoading = false,
+            errorMessage = if (modeStats == null) "Brak danych dla trybu ${mode.name}." else ""
+        )
+    }
+
+    private fun setError(message: String) {
+        _uiState.value = _uiState.value?.copy(
+            isLoading = false,
+            errorMessage = message,
+            kills = "-",
+            wins = "-",
+            matches = "-"
+        )
     }
 }
