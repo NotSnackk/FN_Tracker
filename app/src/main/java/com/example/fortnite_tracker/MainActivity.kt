@@ -1,83 +1,71 @@
 package com.example.fortnite_tracker
 
 import android.os.Bundle
+import android.view.View
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.ViewModelProvider
 import com.example.fortnite_tracker.databinding.MainActivityBinding
-import com.example.fortnite_tracker.viewmodel.StatsViewModel
-import com.example.fortnite_tracker.models.AccountLookupResponse
-import com.example.fortnite_tracker.models.PlayerStatsResponse
-import com.example.fortnite_tracker.models.GlobalStats
-import com.example.fortnite_tracker.models.ModeStats
-import android.widget.Button
-import android.widget.Toast
-import androidx.lifecycle.lifecycleScope
-import com.example.fortnite_tracker.api.ApiClient
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var statsViewModel: StatsViewModel
     private lateinit var binding: MainActivityBinding
-    // Symulacja obiektu binding do elementów UI
-    // private val binding: ActivityMainBinding...
+    private var currentQuery: String = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = MainActivityBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        statsViewModel = ViewModelProvider(this)[StatsViewModel::class.java]
+
+        setupModeSelector()
+        setupObservers()
+
         val nickname = intent.getStringExtra("SEARCH_QUERY")
-        if (!nickname.isNullOrEmpty()) {
-            loadStats(nickname)
+        if (!nickname.isNullOrBlank()) {
+            currentQuery = nickname
+            statsViewModel.loadStats(currentQuery)
         } else {
             Toast.makeText(this, "Brak nicku gracza", Toast.LENGTH_SHORT).show()
+            finish()
         }
     }
-    private fun loadStats(nickname: String) {
-        lifecycleScope.launch(Dispatchers.IO){
-            try {
-                var stats: PlayerStatsResponse?
-                // 1. Pobranie Account ID
-                val accountResponse = ApiClient.retrofitService.getAccountId(nickname, "48778d4c-79e943f8-4e31f1cc-9bd21d12")
 
-                if (accountResponse.isSuccessful) {
-                    val accountId = accountResponse.body()?.account_id
+    private fun setupModeSelector() {
+        val modes = listOf("SOLO", "DUO", "SQUAD")
+        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, modes)
+        binding.modeSpinner.adapter = adapter
 
-                    if (accountId != null) {
-                        // 2. Pobranie statystyk gracza
-                        val statsResponse  = ApiClient.retrofitService.getPlayerStats(accountId, "48778d4c-79e943f8-4e31f1cc-9bd21d12")
-                        if (statsResponse.isSuccessful) {
-                            stats = statsResponse.body()
-                            displayStats(stats)
-                        } else {
-                            binding.error.text ="Nie udało się pobrać statystyk gracza."
-                        }
-                    } else {
-                        binding.error.text = "Nie znaleziono gracza o podanym nicku."
-                    }
-                } else {
-                    binding.error.text = ("Błąd komunikacji z API.")
+        binding.modeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                when (position) {
+                    0 -> statsViewModel.onModeSelected(GameMode.SOLO)
+                    1 -> statsViewModel.onModeSelected(GameMode.DUO)
+                    else -> statsViewModel.onModeSelected(GameMode.SQUAD)
                 }
-            } catch (e: Exception) {
-                binding.error.text = "Błąd komunikacji z API: ${e.message}"
             }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
         }
 
-
-
-    }
-    private fun displayStats(stats: PlayerStatsResponse?) {
-        if (stats!=null){
-            binding.nickname.text = stats.name
-            binding.kills.text = stats.globalStats.solo?.kills.toString()
-            binding.wins.text = stats.globalStats.solo?.wins.toString()
-            binding.matches.text = stats.globalStats.solo?.matchesPlayed.toString()
-        }else{
-            binding.error.text = "Nie udalo sie wyswietlic statystyk"
+        binding.retryButton.setOnClickListener {
+            statsViewModel.loadStats(currentQuery)
         }
     }
 
+    private fun setupObservers() {
+        statsViewModel.uiState.observe(this) { state ->
+            binding.nickname.text = state.nickname
+            binding.kills.text = state.kills
+            binding.wins.text = state.wins
+            binding.matches.text = state.matches
+            binding.error.text = state.errorMessage
+            binding.progressBar.visibility = if (state.isLoading) View.VISIBLE else View.GONE
+            binding.retryButton.visibility = if (state.errorMessage.isNotBlank()) View.VISIBLE else View.GONE
+        }
+    }
 }
